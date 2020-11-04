@@ -60,10 +60,3 @@ class FlexMessage(Message):
         self.type = "flex"
         self.contents = contents
         self.altText = altText
-
-
-class CarouselMessage(Message):
-    def __init__(self, contents, altText="carousel message"):
-        self.type = "carousel"
-        self.contents = contents
-        self.altText = altText
