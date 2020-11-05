@@ -2,12 +2,15 @@ from .base import BaseClient
 
 
 class TalkClient(BaseClient):
-    def __init__(self, channelAccessToken, endpoint="https://api.line.me/v2"):
-        BaseClient.__init__(
-            self,
-            endpoint,
-            {"Authorization": f"Bearer {channelAccessToken}"}
-        )
+    def __init__(
+        self,
+        channelAccessToken,
+        endpoint="https://api.line.me/v2",
+        data_endpoint="https://api-data.line.me/v2"
+    ):
+        headers = {"Authorization": f"Bearer {channelAccessToken}"}
+        self.ccl = BaseClient(data_endpoint, headers)
+        BaseClient.__init__(self, endpoint, headers)
 
     def setReplyToken(self, token):
         self.replyToken = token
@@ -52,3 +55,10 @@ class TalkClient(BaseClient):
     def leaveRoom(self, room_id):
         resp = self.reqPost(f"/bot/room/{room_id}/leave")
         return self.isOK(resp)
+
+    def getContent(self, message_id):
+        resp = self.ccl.reqGet(
+            f"/bot/message/{message_id}/content"
+        )
+        if self.isOK(resp):
+            return resp.content
