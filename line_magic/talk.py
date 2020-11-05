@@ -40,11 +40,6 @@ class TalkClient(BaseClient):
         )
         return self.isOK(resp)
 
-    def getContent(self, message_id):
-        resp = self.reqGet(f"/bot/message/{message_id}/content")
-        if self.isOK(resp):
-            return resp.content
-
     def getProfile(self, user_id):
         resp = self.reqGet(f"/bot/profile/{user_id}")
         if self.isOK(resp):
