@@ -1,96 +1,100 @@
 from flask import Flask, request
-from line_magic import LineMessagingClient, LineMessagingTracer
-from line_magic import TextMessage, StickerMessage
+from line_magic import (
+    LineMessagingClient, LineMessagingTracer,
+    TextMessage, StickerMessage,
+    TraceType
+)
+import sqlite3
 
 cl = LineMessagingClient(channelAccessToken="")
-tracer = LineMessagingTracer(cl, prefix=["!", "?", "#", "."])
+db = sqlite3.connect("test.db")
+tracer = LineMessagingTracer(cl, db, ["!", "?", "#", "."])
 
 
-class Operations(object):
-    @tracer.Before("Operation")
-    def set_Token(self, cl, op):
+class Events(object):
+    @tracer.Before(TraceType.EVENT)
+    def set_Token(self, ctx, cl, op):
         if "replyToken" in op:
             cl.setReplyToken(op["replyToken"])
 
-    @tracer.Operation("message")
-    def got_message(self, cl, msg):
-        print(msg)
-        self.trace(msg, "Content")
+    @tracer.Event("message")
+    def got_message(self, ctx, cl, msg):
+        ctx.trace(msg, TraceType.CONTENT)
 
-    @tracer.Operation("follow")
-    def got_follow(self, cl, msg):
+    @tracer.Event("follow")
+    def got_follow(self, ctx, cl, msg):
         print("FOLLOW")
         msgs = [TextMessage("Thanks for add me!")]
         cl.replyMessage(msgs)
 
-    @tracer.Operation("unfollow")
-    def got_unfollow(self, cl, msg):
+    @tracer.Event("unfollow")
+    def got_unfollow(self, ctx, cl, msg):
         print("UNFOLLOW")
 
-    @tracer.Operation("join")
-    def got_join(self, cl, msg):
+    @tracer.Event("join")
+    def got_join(self, ctx, cl, msg):
         print("JOIN")
         msgs = [TextMessage("Thanks for invite me!")]
         cl.replyMessage(msgs)
 
-    @tracer.Operation("leave")
-    def got_leave(self, cl, msg):
+    @tracer.Event("leave")
+    def got_leave(self, ctx, cl, msg):
         print("LEAVE")
         print(msg)
 
-    @tracer.Operation("postback")
-    def got_postback(self, cl, msg):
+    @tracer.Event("postback")
+    def got_postback(self, ctx, cl, msg):
         print("POSTBACK")
         print(msg)
 
 
 class Contents(object):
     @tracer.Content("text")
-    def got_text(self, cl, msg):
-        self.trace(msg, "Command")
+    def got_text(self, ctx, cl, msg):
+        ctx.trace(msg, TraceType.COMMAND)
 
     @tracer.Content("image")
-    def got_image(self, cl, msg):
+    def got_image(self, ctx, cl, msg):
         msgs = [TextMessage("Kawaii!")]
         cl.replyMessage(msgs)
 
     @tracer.Content("video")
-    def got_video(self, cl, msg):
+    def got_video(self, ctx, cl, msg):
         msgs = [TextMessage("Nice video!")]
         cl.replyMessage(msgs)
 
     @tracer.Content("audio")
-    def got_audio(self, cl, msg):
+    def got_audio(self, ctx, cl, msg):
         msgs = [TextMessage("Nice audio!")]
         cl.replyMessage(msgs)
 
     @tracer.Content("file")
-    def got_file(self, cl, msg):
+    def got_file(self, ctx, cl, msg):
         msgs = [TextMessage("Nice file!")]
         cl.replyMessage(msgs)
 
     @tracer.Content("location")
-    def got_location(self, cl, msg):
+    def got_location(self, ctx, cl, msg):
         msgs = [TextMessage("Nice location!")]
         cl.replyMessage(msgs)
 
     @tracer.Content("sticker")
-    def got_sticker(self, cl, msg):
+    def got_sticker(self, ctx, cl, msg):
         msgs = [StickerMessage(1, 2)]
         cl.replyMessage(msgs)
 
 
 class Commands(object):
-    @tracer.Command(alt=["ハロー", "hello"])
-    def hi(self, cl, msg):
+    @tracer.Command(usePrefix=False, alt=["ハロー", "hello"])
+    def hi(self, ctx, cl, msg):
         '''Check the bot Alive'''
         msgs = [TextMessage("Hi too!")]
         cl.replyMessage(msgs)
 
     @tracer.Command()
-    def help(self, cl, msg):
+    def help(self, ctx, cl, msg):
         '''Display this help message'''
-        msgs = [TextMessage(self.genHelp())]
+        msgs = [TextMessage(ctx.genHelp())]
         cl.replyMessage(msgs)
 
 
@@ -99,7 +103,7 @@ def app_callback():
         if request.method == "POST":
             data = request.get_json()
             for d in data["events"]:
-                tracer.trace(d, "Operation")
+                tracer.trace(d, TraceType.EVENT)
         return "OK"
     except:
         return "Error"
@@ -108,7 +112,7 @@ def app_callback():
 def createApp():
     app = Flask(__name__)
     app.add_url_rule('/callback', 'callback', app_callback, methods=["GET", "POST"])
-    tracer.addClass(Operations())
+    tracer.addClass(Events())
     tracer.addClass(Contents())
     tracer.addClass(Commands())
     tracer.startup()

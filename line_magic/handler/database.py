@@ -5,27 +5,33 @@ import json
 
 
 class InternalProcess(object):
-    def ug_get(self, type, id, var_name):
+    def __init__(self, dbType, db, conn):
+        self.dbType = dbType
+        self.db = db
+        self.conn = conn
+
+    def ug_get(self, type, id, var):
         if self.dbType == "JSON":
             if id not in self.db[type]:
                 self.ug_reset(type, id)
-            if var_name not in self.db[type][id]:
-                if var_name in self.db[type]["Default"]:
-                    self.db[type][id][var_name] = self.db[type]["Default"][var_name]
+            if var not in self.db[type][id]:
+                if var in self.db[type]["Default"]:
+                    self.db[type][id][var] = self.db[type]["Default"][var]
                 else:
                     return None
-            return self.db[type][id][var_name]
+            return self.db[type][id][var]
         else:
             if self.dbType == "SQLite":
-                self.conn.execute("PRAGMA TABLE_INFO(%s)" % (type))
+                self.conn.execute(f"PRAGMA TABLE_INFO({type})")
                 keys = [x[1] for x in self.conn.fetchall()]
             else:
-                self.conn.execute("SHOW COLUMNS FROM %s;" % (type))
+                self.conn.execute(f"SHOW COLUMNS FROM {type};")
                 keys = [x[0] for x in self.conn.fetchall()]
-            if var_name not in keys:
+            if var not in keys:
                 return None
-            self.conn.execute("SELECT %s FROM %s WHERE id='%s'" %
-                              (var_name, type, id))
+            self.conn.execute(
+                f"SELECT {var} FROM {type} WHERE id='{id}'"
+            )
             resp = self.conn.fetchone()[0]
             if resp == "True":
                 resp = True
@@ -56,7 +62,7 @@ class InternalProcess(object):
                 self.conn.execute(
                     "SELECT * FROM %s WHERE id='%s'" % (type, id))
                 chk = self.conn.fetchone()
-                if chk == None:
+                if chk is None:
                     self.ug_reset(type, id)
                 # Get Table Keys
                 if self.dbType == "SQLite":
@@ -74,7 +80,7 @@ class InternalProcess(object):
                 self.db.commit()
             except:
                 self.db.rollback()
-                raise Exception("post%s failed" % (type))
+                raise Exception(f"post{type} failed")
 
     def ug_default(self, type, id):
         if self.dbType == "JSON":
@@ -96,8 +102,10 @@ class InternalProcess(object):
                 default_values = list(self.conn.fetchone())
                 for i, k in enumerate(table_keys):
                     if i != 0:
-                        self.conn.execute("UPDATE %s SET '%s'='%s' where id='Default'" % (
-                            type, k, default_values[i]))
+                        self.conn.execute(
+                            f"""UPDATE {type} SET '{k}'='{default_values[i]}'
+                            WHERE id = 'Default'"""
+                        )
                 self.db.commit()
             except:
                 self.db.rollback()
@@ -120,11 +128,17 @@ class InternalProcess(object):
             dataType = type(data).__name__
             if dataType in pysq:
                 if not default:
-                    self.conn.execute("ALTER TABLE %s ADD COLUMN %s %s DEFAULT %s" % (
-                        _type, var_name, pysq[dataType], sqdf[pysq[dataType]]))
+                    self.conn.execute(
+                        f"""ALTER TABLE {_type}
+                        ADD COLUMN {var_name} {pysq[dataType]}
+                        DEFAULT {sqdf[pysq[dataType]]} """
+                    )
                 else:
-                    self.conn.execute("ALTER TABLE %s ADD COLUMN %s %s DEFAULT '%s'" % (
-                        _type, var_name, pysq[dataType], default))
+                    self.conn.execute(
+                        f"""ALTER TABLE {_type}
+                        ADD COLUMN {var_name} {pysq[dataType]}
+                        DEFAULT '{default}' """
+                    )
             else:
                 self.conn.execute(
                     "ALTER TABLE %s ADD COLUMN %s BLOB;" % (_type, var_name))
@@ -150,8 +164,10 @@ class InternalProcess(object):
                 table_keys = self.conn.fetchall()
             for i, k in enumerate(table_keys):
                 if i != 0:
-                    self.conn.execute("UPDATE %s SET '%s'='%s' where id='%s'" % (
-                        type, k[1], default_values[i], id))
+                    self.conn.execute(
+                        f"""UPDATE {type} SET '{k[1]}'='{default_values[i]}'
+                        WHERE id='{id}'"""
+                    )
             self.db.commit()
 
     def ps_list(self, type):
@@ -181,9 +197,9 @@ class InternalProcess(object):
             "SELECT name FROM %s where mid_or_gid='%s'" % (type, mid_or_gid))
         return [x[0] for x in self.conn.fetchall()]
 
-    def ps_delete(self, type, dataName):
+    def ps_delete(self, ps_type, dataName):
         if self.dbType == "JSON":
-            if permission in self.db[type]:
+            if dataName in self.db[type]:
                 del self.db[type][dataName]
         else:
             self.conn.execute("DELETE FROM %s where name='%s'" %
@@ -202,17 +218,23 @@ class InternalProcess(object):
         else:
             try:
                 self.conn.execute(
-                    "DELETE FROM %s where mid_or_gid='%s'" % (type, mid_or_gid))
+                    f"DELETE FROM {type} where mid_or_gid='{mid_or_gid}'"
+                )
                 for d in data:
                     self.conn.execute(
-                        "INSERT INTO %s (name,mid_or_gid) VALUES ('%s','%s')" % (type, d, mid_or_gid))
+                        f"""INSERT INTO {type} (name,mid_or_gid)
+                        VALUES('{d}', '{mid_or_gid}')"""
+                    )
                 self.db.commit()
             except:
                 self.db.rollback()
                 raise Exception("postPermission failed")
 
 
-class UserDatabase(object):
+class UserDatabase(InternalProcess):
+    def __init__(self, dbType, db, conn):
+        InternalProcess.__init__(self, dbType, db, conn)
+
     def getUser(self, mid, var_name):
         '''Get UserVar from Database'''
         return self.ug_get("VarUser", mid, var_name)
@@ -238,7 +260,10 @@ class UserDatabase(object):
         return self.ug_reset("VarUser", mid)
 
 
-class GroupDatabase(object):
+class GroupDatabase(InternalProcess):
+    def __init__(self, dbType, db, conn):
+        InternalProcess.__init__(self, dbType, db, conn)
+
     def getGroup(self, gid, var_name):
         '''Get UserVar from Database'''
         return self.ug_get("VarGroup", gid, var_name)
@@ -264,7 +289,10 @@ class GroupDatabase(object):
         return self.ug_reset("VarGroup", gid)
 
 
-class TracerDatabase(object):
+class TracerDatabase(InternalProcess):
+    def __init__(self, dbType, db, conn):
+        InternalProcess.__init__(self, dbType, db, conn)
+
     def getPermissionList(self):
         return self.ps_list("Permission")
 
@@ -328,9 +356,15 @@ class LogDatabase(object):
         pass
 
 
-class Database(InternalProcess, UserDatabase, GroupDatabase, LogDatabase, TracerDatabase):
+class DatabaseHandler(
+    UserDatabase,
+    GroupDatabase,
+    LogDatabase,
+    TracerDatabase
+):
     def __init__(self, db):
         dbType = type(db).__name__
+        json_types = ['dict', 'collections.OrderedDict', "NoneType"]
         # MySQL/SQLite3
         if dbType in ['connection', "Connection"]:
             if dbType == 'Connection':
@@ -340,12 +374,16 @@ class Database(InternalProcess, UserDatabase, GroupDatabase, LogDatabase, Tracer
             self.db = db
             self.conn = db.cursor()
         # Json
-        elif type(db).__name__ in ['dict', 'collections.OrderedDict', "NoneType"]:
+        elif type(db).__name__ in json_types:
             self.dbType = "JSON"
             if type(db).__name__ == "NoneType":
                 self.generate_db()
             else:
                 self.db = db
+            self.conn = None
+        UserDatabase.__init__(self, self.dbType, self.db, self.conn)
+        GroupDatabase.__init__(self, self.dbType, self.db, self.conn)
+        TracerDatabase.__init__(self, self.dbType, self.db, self.conn)
 
     def generate_db(self):
         '''Call this if using new database.'''
@@ -354,11 +392,29 @@ class Database(InternalProcess, UserDatabase, GroupDatabase, LogDatabase, Tracer
                 "Default": {}}, "VarUser": {"Default": {}}, "Log": {}}
             return
         ct = [
-            'CREATE TABLE "Log" ( `ID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Time` TEXT, `Source` TEXT, `Message` TEXT )',
-            'CREATE TABLE "Permission" ( `ID` INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE, `name` TEXT, `mid_or_gid` TEXT )',
-            'CREATE TABLE "Scope" ( `ID` INTEGER NOT NULL UNIQUE, `name` TEXT, `mid_or_gid` TEXT, PRIMARY KEY(`ID`) )',
-            'CREATE TABLE "VarGroup" ( `id` TEXT NOT NULL UNIQUE, PRIMARY KEY(`id`) )',
-            'CREATE TABLE "VarUser" ( `id` TEXT NOT NULL UNIQUE, PRIMARY KEY(`id`) )',
+            '''CREATE TABLE "Log"
+                ( `ID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                `Time` TEXT,
+                `Source` TEXT,
+                `Message` TEXT)
+            ''',
+            '''CREATE TABLE "Permission"
+                ( `ID` INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
+                `name` TEXT,
+                `mid_or_gid` TEXT)
+            ''',
+            '''CREATE TABLE "Scope"
+                ( `ID` INTEGER NOT NULL UNIQUE,
+                `name` TEXT,
+                `mid_or_gid` TEXT,
+                PRIMARY KEY(`ID`))
+            ''',
+            '''CREATE TABLE "VarGroup"
+                (`id` TEXT NOT NULL UNIQUE, PRIMARY KEY(`id`))
+            ''',
+            '''CREATE TABLE "VarUser"
+                ( `id` TEXT NOT NULL UNIQUE, PRIMARY KEY(`id`))
+            ''',
             "INSERT INTO VarUser('id') VALUES ('Default')",
             "INSERT INTO VarGroup('id') VALUES ('Default')"
         ]
@@ -383,7 +439,7 @@ class Database(InternalProcess, UserDatabase, GroupDatabase, LogDatabase, Tracer
 
 if __name__ == "__main__":
     test_db = sqlite3.connect("database_test_sqlite2.db")
-    dbp = Database(db=test_db)
+    dbp = DatabaseHandler(db=test_db)
     # UserDatabase
     dbp.postUser("MID", "Test", 10)
     dbp.getUser("MID", "Test")
@@ -398,9 +454,9 @@ if __name__ == "__main__":
     dbp.deleteGroup("GID2")
     # TracerDatabase
     dbp.postPermission("my_mid", ["Developper", "User"])
-    dbp.getPermission("my_mid")
+    dbp.getPermissionById("my_mid")
     dbp.deletePermission("Developper")
     dbp.postScope("my_mid", ["HENTAI"])
-    dbp.getScope("HENTAI")
+    dbp.getScopeByName("HENTAI")
     dbp.deleteScope("HENTAI")
     dbp.file_export()
